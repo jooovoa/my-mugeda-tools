@@ -1,5 +1,5 @@
-/** * 木疙瘩消消乐正式版引擎 - v2.0
- * 已打通 GitHub Pages 与 木疙瘩 联动
+/** * 木疙瘩消消乐正式版引擎 - v2.1
+ * 解决画面空白与层级问题
  */
 
 window.Match3Engine = {
@@ -16,30 +16,47 @@ window.Match3Engine = {
     },
 
     init: function(mugeda, containerName) {
-        console.log("%c [Match3Engine] 启动正式版游戏逻辑...", "color: white; background: #2196F3; font-size: 16px;");
+        console.log("%c [Match3Engine] 正在深度检查容器状态...", "color: white; background: #2196F3; font-size: 14px;");
         
         const setup = () => {
             const scene = mugeda.currentScene;
             const container = scene.getObjectByName(containerName);
             
             if (!container) {
-                setTimeout(setup, 800);
+                console.warn("找不到元件: " + containerName + "，继续尝试...");
+                setTimeout(setup, 500);
                 return;
             }
 
-            // 清理旧画布
+            // 获取容器真实的宽高
+            const width = container.width || container.dom.offsetWidth || 300;
+            const height = container.height || container.dom.offsetHeight || 400;
+
+            console.log("容器尺寸确认:", width, "x", height);
+
+            // 如果已经存在画布则先清理
             const oldCanvas = container.dom.querySelector('canvas');
             if (oldCanvas) oldCanvas.remove();
 
             const canvas = document.createElement('canvas');
-            canvas.width = container.width;
-            canvas.height = container.height;
-            Object.assign(canvas.style, {
-                position: 'absolute', top: '0', left: '0', zIndex: '999',
-                backgroundColor: '#ffffff', pointerEvents: 'auto'
-            });
-            container.dom.appendChild(canvas);
+            canvas.width = width;
+            canvas.height = height;
             
+            // 核心修复：确保 Canvas 浮在最上层且充满容器
+            Object.assign(canvas.style, {
+                position: 'absolute',
+                top: '0px',
+                left: '0px',
+                width: width + 'px',
+                height: height + 'px',
+                zIndex: '10000',      // 极高层级
+                backgroundColor: '#ffffff', // 强制白色背景防止透明
+                pointerEvents: 'auto',
+                display: 'block'
+            });
+            
+            container.dom.appendChild(canvas);
+            console.log("Canvas 已挂载，开始运行逻辑...");
             this.run(canvas, scene);
         };
 
@@ -63,7 +80,6 @@ window.Match3Engine = {
             return img;
         });
 
-        // 初始化并防止初始三连
         const createGrid = () => {
             for (let r = 0; r < rows; r++) {
                 grid[r] = [];
@@ -75,7 +91,7 @@ window.Match3Engine = {
                         (c >= 2 && grid[r][c-1].type === type && grid[r][c-2].type === type) ||
                         (r >= 2 && grid[r-1][c].type === type && grid[r-2][c].type === type)
                     );
-                    grid[r][c] = { type, alpha: 1, scale: 1 };
+                    grid[r][c] = { type, alpha: 1 };
                 }
             }
         };
@@ -106,11 +122,9 @@ window.Match3Engine = {
                 return;
             }
 
-            // 消除动画
             matches.forEach(m => grid[m.r][m.c].alpha = 0);
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 200));
 
-            // 掉落逻辑
             for (let c = 0; c < cols; c++) {
                 let empty = 0;
                 for (let r = rows - 1; r >= 0; r--) {
@@ -126,13 +140,15 @@ window.Match3Engine = {
                     grid[i][c].alpha = 1;
                 }
             }
-            
-            // 递归检查连消
-            setTimeout(handleElimination, 300);
+            setTimeout(handleElimination, 250);
         };
 
         const draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 绘制底色
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
             grid.forEach((row, r) => {
                 row.forEach((item, c) => {
                     if (item.alpha > 0) {
@@ -142,7 +158,13 @@ window.Match3Engine = {
                         }
                         const img = images[item.type];
                         if (img.complete) {
-                            ctx.drawImage(img, c * size + 8, r * size + 8, size - 16, size - 16);
+                            ctx.drawImage(img, c * size + 5, r * size + 5, size - 10, size - 10);
+                        } else {
+                            // 图片没加载出来时的占位
+                            ctx.fillStyle = "#ddd";
+                            ctx.beginPath();
+                            ctx.arc(c * size + size/2, r * size + size/2, size/3, 0, Math.PI*2);
+                            ctx.fill();
                         }
                     }
                 });
@@ -167,11 +189,8 @@ window.Match3Engine = {
                     let t1 = grid[r][c].type;
                     grid[r][c].type = grid[selected.r][selected.c].type;
                     grid[selected.r][selected.c].type = t1;
-
-                    if (findMatches().length > 0) {
-                        handleElimination();
-                    } else {
-                        // 还原交换
+                    if (findMatches().length > 0) handleElimination();
+                    else {
                         setTimeout(() => {
                             grid[selected.r][selected.c].type = grid[r][c].type;
                             grid[r][c].type = t1;
