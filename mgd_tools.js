@@ -1,3 +1,7 @@
+/** * TEST_VERSION_1.1 - 确认文件名: mgd_tools.js
+ * 如果你在浏览器看到这行，说明路径完全正确！
+ */
+
 const Match3Engine = {
     config: {
         cols: 6,
@@ -12,34 +16,40 @@ const Match3Engine = {
     },
 
     init: function(mugeda, containerName) {
-        const self = this;
-        console.log("正在尝试查找元件: " + containerName);
+        console.log("Match3Engine: 正在通过 mgd_tools.js 初始化...");
         
-        mugeda.addEventListener("renderready", function() {
+        const setup = () => {
             const scene = mugeda.currentScene;
             const container = scene.getObjectByName(containerName);
             
             if (!container) {
-                console.error("找不到名为 '" + containerName + "' 的元件，请确认木疙瘩里的名称！");
+                console.warn("Match3Engine: 找不到元件 '" + containerName + "'，正在等待木疙瘩加载...");
+                setTimeout(setup, 800);
                 return;
             }
 
-            console.log("成功找到元件，开始挂载 Canvas");
+            // 防止重复创建
+            if (container.dom.querySelector('canvas')) return;
 
             const canvas = document.createElement('canvas');
             canvas.width = container.width;
             canvas.height = container.height;
             Object.assign(canvas.style, {
-                position: 'absolute',
-                top: '0',
-                left: '0',
-                zIndex: '9999',
-                backgroundColor: 'rgba(173, 216, 230, 0.2)' // 调试用浅蓝色背景
+                position: 'absolute', 
+                top: '0', 
+                left: '0', 
+                zIndex: '999',
+                backgroundColor: '#f9f9f9', 
+                pointerEvents: 'auto'
             });
             container.dom.appendChild(canvas);
             
-            self.run(canvas, scene);
-        });
+            console.log("Match3Engine: 画布已挂载到 " + containerName);
+            this.run(canvas, scene);
+        };
+
+        mugeda.addEventListener("renderready", setup);
+        if (mugeda.isRenderReady) setup();
     },
 
     run: function(canvas, scene) {
@@ -47,9 +57,7 @@ const Match3Engine = {
         const { cols, rows, assets } = this.config;
         const size = canvas.width / cols;
         let grid = [];
-        let selected = null;
-        let isAnimating = false;
-
+        
         const images = assets.map(src => {
             const img = new Image();
             img.crossOrigin = "anonymous";
@@ -57,44 +65,31 @@ const Match3Engine = {
             return img;
         });
 
-        function initGrid() {
-            for (let r = 0; r < rows; r++) {
-                grid[r] = [];
-                for (let c = 0; c < cols; c++) {
-                    grid[r][c] = { type: Math.floor(Math.random() * assets.length), alpha: 1 };
-                }
+        // 初始化棋盘
+        for (let r = 0; r < rows; r++) {
+            grid[r] = [];
+            for (let c = 0; c < cols; c++) {
+                grid[r][c] = { type: Math.floor(Math.random() * assets.length) };
             }
         }
 
-        function draw() {
+        const draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 绘制网格辅助线
-            ctx.strokeStyle = "rgba(0,0,0,0.1)";
-            for(let i=0; i<=cols; i++) {
-                ctx.beginPath(); ctx.moveTo(i*size, 0); ctx.lineTo(i*size, canvas.height); ctx.stroke();
-            }
-            for(let i=0; i<=rows; i++) {
-                ctx.beginPath(); ctx.moveTo(0, i*size); ctx.lineTo(canvas.width, i*size); ctx.stroke();
-            }
-
             grid.forEach((row, r) => {
                 row.forEach((item, c) => {
-                    if (item.alpha > 0) {
-                        const img = images[item.type];
-                        if (img.complete) {
-                            ctx.drawImage(img, c * size + 5, r * size + 5, size - 10, size - 10);
-                        }
+                    const img = images[item.type];
+                    if (img.complete) {
+                        ctx.drawImage(img, c * size + 5, r * size + 5, size - 10, size - 10);
                     }
                 });
             });
             requestAnimationFrame(draw);
-        }
-
-        initGrid();
+        };
         draw();
     }
 };
 
+// 这里的 'gamearea' 必须和你在木疙瘩右侧属性栏填写的“名称”完全一致
 if (typeof mugeda !== 'undefined') {
     Match3Engine.init(mugeda, 'gamearea');
 }
