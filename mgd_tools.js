@@ -1,161 +1,95 @@
-/** * 木疙瘩消消乐引擎 - v2.6 图片容错版
- * 即使图片路径错误，也会显示彩色方块，保证游戏可玩。
+/** * 木疙瘩消消乐引擎 - v3.0 原生元件版
+ * 适配：使用舞台上已有的 a1~a16 元件进行逻辑控制
  */
 
 window.Match3Engine = {
-    config: {
-        cols: 6,
-        rows: 8,
-        // --- 图片配置区 ---
-        assets: [
-            'https://jooovoa.github.io/my-mugeda-tools/images/1.png', 
-            'https://jooovoa.github.io/my-mugeda-tools/images/2.png',
-            'https://jooovoa.github.io/my-mugeda-tools/images/3.png',
-            'https://jooovoa.github.io/my-mugeda-tools/images/4.png',
-            'https://jooovoa.github.io/my-mugeda-tools/images/5.png'
-        ],
-        colors: ['#FF5252', '#FFEB3B', '#2196F3', '#4CAF50', '#9C27B0']
-    },
-
-    init: function(mugeda, containerName) {
-        console.log("%c [Match3Engine] v2.6 启动中...", "color: white; background: #FF5722; font-size: 14px;");
+    // 对应你的 4 帧颜色：1:红, 2:绿, 3:黄, 4:蓝
+    maxFrames: 4,
+    
+    init: function(mugeda) {
+        console.log("%c [Match3Engine] v3.0 启动：操控原生元件 a1~a16", "color: white; background: #2196F3; font-size: 14px;");
         
         const setup = () => {
             const scene = mugeda.currentScene;
-            const container = scene.getObjectByName(containerName);
-            
-            if (!container) {
-                setTimeout(setup, 800);
-                return;
+            const blocks = [];
+            let selectedIndex = -1;
+
+            // 1. 获取并初始化 16 个元件
+            for (let i = 1; i <= 16; i++) {
+                const name = 'a' + i;
+                const obj = scene.getObjectByName(name);
+                if (obj) {
+                    // 随机跳到 1-4 帧中的一帧
+                    const randomFrame = Math.floor(Math.random() * this.maxFrames) + 1;
+                    obj.gotoAndStop(randomFrame);
+                    
+                    blocks.push({
+                        id: i - 1,
+                        name: name,
+                        handle: obj,
+                        frame: randomFrame
+                    });
+
+                    // 2. 绑定点击事件
+                    obj.dom.style.cursor = 'pointer';
+                    obj.dom.addEventListener('click', () => {
+                        handleBlockClick(i - 1);
+                    });
+                } else {
+                    console.warn("未找到元件: " + name);
+                }
             }
 
-            const rect = container.dom.getBoundingClientRect();
-            let existing = document.getElementById('mgd_match3_canvas');
-            if (existing) existing.remove();
+            // 处理点击和交换逻辑
+            const handleBlockClick = (index) => {
+                if (selectedIndex === -1) {
+                    // 第一次选中
+                    selectedIndex = index;
+                    // 给选中的增加点透明度反馈
+                    blocks[index].handle.alpha = 0.5;
+                } else {
+                    const idx1 = selectedIndex;
+                    const idx2 = index;
+                    
+                    // 恢复透明度
+                    blocks[idx1].handle.alpha = 1;
 
-            const canvas = document.createElement('canvas');
-            canvas.id = 'mgd_match3_canvas';
-            canvas.width = container.width || rect.width || 320;
-            canvas.height = container.height || rect.height || 480;
-            
-            Object.assign(canvas.style, {
-                position: 'fixed',
-                top: rect.top + 'px',
-                left: rect.left + 'px',
-                width: rect.width + 'px',
-                height: rect.height + 'px',
-                zIndex: '999999',
-                pointerEvents: 'auto',
-                backgroundColor: '#FFF',
-                border: '2px dashed #ccc'
-            });
-            
-            document.body.appendChild(canvas);
-            
-            // 实时同步位置
-            const sync = () => {
-                const r = container.dom.getBoundingClientRect();
-                canvas.style.top = r.top + 'px';
-                canvas.style.left = r.left + 'px';
-                if(document.getElementById('mgd_match3_canvas')) requestAnimationFrame(sync);
+                    if (idx1 === idx2) {
+                        selectedIndex = -1;
+                        return;
+                    }
+
+                    // 判断是否相邻（4x4 矩阵逻辑）
+                    const r1 = Math.floor(idx1 / 4), c1 = idx1 % 4;
+                    const r2 = Math.floor(idx2 / 4), c2 = idx2 % 4;
+                    const isAdjacent = Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1;
+
+                    if (isAdjacent) {
+                        // 交换它们的帧（颜色）
+                        const frame1 = blocks[idx1].handle.currentFrame;
+                        const frame2 = blocks[idx2].handle.currentFrame;
+                        
+                        blocks[idx1].handle.gotoAndStop(frame2);
+                        blocks[idx2].handle.gotoAndStop(frame1);
+                        
+                        console.log(`交换了 ${blocks[idx1].name} 和 ${blocks[idx2].name}`);
+                        
+                        // 可以在这里加入消除检测函数
+                        checkMatches(blocks);
+                    }
+                    
+                    selectedIndex = -1;
+                }
             };
-            sync();
 
-            this.run(canvas);
+            // 简单的消除检测逻辑（检测 3 连）
+            const checkMatches = (allBlocks) => {
+                // 这里暂时只做交换，如果需要自动消除逻辑，可以在此扩展
+                // 比如：如果 frame 一样，就一起跳到第 5 帧（空白帧）
+            };
         };
 
         if (mugeda.isRenderReady) setup();
         else mugeda.addEventListener("renderready", setup);
-    },
-
-    run: function(canvas) {
-        const ctx = canvas.getContext('2d');
-        const { cols, rows, assets, colors } = this.config;
-        const size = canvas.width / cols;
-        
-        let grid = [];
-        let images = [];
-        let selected = null;
-
-        // 尝试加载图片，失败了也不怕
-        assets.forEach((src, index) => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = src;
-            images[index] = img;
-        });
-
-        // 初始化棋盘
-        const createGrid = () => {
-            for (let r = 0; r < rows; r++) {
-                grid[r] = [];
-                for (let c = 0; c < cols; c++) {
-                    grid[r][c] = { type: Math.floor(Math.random() * assets.length), alpha: 1 };
-                }
-            }
-        };
-
-        const draw = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#FFFFFF";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            grid.forEach((row, r) => {
-                row.forEach((item, c) => {
-                    if (item.alpha <= 0) return;
-                    const x = c * size;
-                    const y = r * size;
-                    const img = images[item.type];
-                    
-                    // 选中效果
-                    if (selected && selected.r === r && selected.c === c) {
-                        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-                        ctx.fillRect(x, y, size, size);
-                    }
-
-                    if (img.complete && img.naturalWidth !== 0) {
-                        // 图片加载成功，画图
-                        ctx.drawImage(img, x + 8, y + 8, size - 16, size - 16);
-                    } else {
-                        // 图片加载失败，画彩色圆圈，中间写个编号
-                        ctx.fillStyle = colors[item.type % colors.length];
-                        ctx.beginPath();
-                        ctx.arc(x + size/2, y + size/2, size/3, 0, Math.PI*2);
-                        ctx.fill();
-                        ctx.fillStyle = "white";
-                        ctx.textAlign = "center";
-                        ctx.font = "bold 14px Arial";
-                        ctx.fillText(item.type + 1, x + size/2, y + size/2 + 5);
-                    }
-                });
-            });
-            requestAnimationFrame(draw);
-        };
-
-        // 点击逻辑
-        canvas.addEventListener('mousedown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-            const c = Math.floor(x / size);
-            const r = Math.floor(y / (canvas.height / rows));
-
-            if (r >= 0 && r < rows && c >= 0 && c < cols) {
-                if (!selected) {
-                    selected = { r, c };
-                } else {
-                    const dist = Math.abs(r - selected.r) + Math.abs(c - selected.c);
-                    if (dist === 1) {
-                        let t = grid[r][c].type;
-                        grid[r][c].type = grid[selected.r][selected.c].type;
-                        grid[selected.r][selected.c].type = t;
-                    }
-                    selected = null;
-                }
-            }
-        });
-
-        createGrid();
-        draw();
     }
 };
